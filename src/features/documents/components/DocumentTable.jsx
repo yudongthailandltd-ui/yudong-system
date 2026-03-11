@@ -8,29 +8,60 @@ import * as XLSX from 'xlsx';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+// ฟังก์ชันสำหรับจัดการวันที่จาก Excel ให้เป็นรูปแบบที่ Database เข้าใจ
+const smartParseDate = (excelDate) => {
+  if (!excelDate) return null;
+
+  try {
+    // 1. กรณีเป็นตัวเลข Serial จาก Excel (เช่น 45678)
+    if (typeof excelDate === 'number') {
+      // ใช้ XLSX.SSF เพื่อแปลงเลข Excel เป็น JS Date
+      const dateObj = XLSX.SSF.parse_date_code(excelDate);
+      return new Date(dateObj.y, dateObj.m - 1, dateObj.d).toISOString();
+    }
+
+    // 2. กรณีเป็น String วันที่ (เช่น "2024-12-23")
+    const parsed = new Date(excelDate);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+
+    // 3. กรณีเป็นรูปแบบ DD/MM/YYYY (พบบ่อยในไฟล์ไทย)
+    if (typeof excelDate === 'string' && excelDate.includes('/')) {
+      const [d, m, y] = excelDate.split('/');
+      const year = parseInt(y) > 2500 ? parseInt(y) - 543 : parseInt(y); // รองรับ พ.ศ.
+      const newDate = new Date(year, m - 1, d);
+      if (!isNaN(newDate.getTime())) return newDate.toISOString();
+    }
+
+    return null;
+  } catch (err) {
+    console.error("Error parsing date:", excelDate, err);
+    return null;
+  }
+};
 const DocumentTable = ({ data, onImport, onDelete }) => {
   // --- 1. ฟังก์ชันจัดการไฟล์ ---
-  const handleExport = () => {
-    const exportData = data.map(item => ({
-      "วันที่วางบิล": toThaiDate(item.date_record),
-      "Supplier": item.ap_name,
-      "Invoice No.": item.inv_no,
-      "Net Pay": item.net_pay_amt,
-      "กำหนดจ่าย": toThaiDate(item.due_date),
-      "ผู้บันทึก": item.recorder_name
-    }));
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-    XLSX.writeFile(wb, `Yudong_Export_${new Date().getTime()}.xlsx`);
-  };
+ const handleExport = () => {
+  const exportData = data.map(item => ({
+    "วันที่วางบิล": toThaiDate(item.date_record),
+    "Supplier": item.ap_name,
+    "Invoice No.": item.inv_no,
+    "Job No.": item.job_no,
+    "ยอดรวม": item.total_amt,
+    "หัก ณ ที่จ่าย 1%": item.wht_1_amt,
+    "ยอดจ่ายสุทธิ (Net Pay)": item.net_pay_amt,
+    "กำหนดจ่าย": toThaiDate(item.due_date),
+    "รอบวันที่จ่ายจริง": item.payment_date ? toThaiDate(item.payment_date) : "-",
+    "ผู้บันทึก": item.recorder_name || "System"
+  }));
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+  XLSX.writeFile(wb, `Billing_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+};
 
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    // ... (Logic การอ่านไฟล์ Excel เหมือน Step 10) ...
-    // ผมแนะนำให้คุณยก Logic handleFileChange จาก Step 10 มาวางตรงนี้ครับ
-     const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -40,33 +71,48 @@ const DocumentTable = ({ data, onImport, onDelete }) => {
         const bstr = event.target.result;
         const wb = XLSX.read(bstr, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
+
+        // ✨ คีย์สำคัญ: { range: 2 } จะข้าม 2 แถวแรก และเริ่มอ่านแถวที่ 3 เป็นหัวตาราง
         const json = XLSX.utils.sheet_to_json(ws, { range: 2 });
 
         const formatted = json.map(row => {
-          // ล้างชื่อคอลัมน์จากช่องว่าง
+          // ล้างชื่อคอลัมน์จากช่องว่าง (บางทีใน Excel มี space ต่อท้ายชื่อหัวข้อ)
           const cleanRow = {};
           Object.keys(row).forEach(k => cleanRow[k.trim()] = row[k]);
 
           return {
             date_record: smartParseDate(cleanRow["Date"]),
-            ap_name: cleanRow["Code"]?.toString() || "",
+            ap_name: cleanRow["Code"]?.toString() || "", 
             inv_no: cleanRow["Inv. No."] || "",
             job_no: cleanRow["Job no."] || "",
+            // ตัวเลขต้องใช้ Number() ครอบเพื่อความชัวร์
+            total_amt: Number(cleanRow["Total"] || 0),
             net_pay_amt: Number(cleanRow["Net pay"] || 0),
             due_date: smartParseDate(cleanRow["Due Date"]),
-            // ใส่ฟิลด์ที่จำเป็นตาม Schema
+            // คุณสามารถเพิ่มฟิลด์อื่นๆ ตามที่ไฟล์มีได้เลยครับ
           };
-        }).filter(item => item.date_record); // กรองแถวว่าง
+        }).filter(item => item.date_record && item.ap_name); // กรองเฉพาะแถวที่มีข้อมูลจริง
 
-        onImport(formatted); // ส่งไปบันทึกที่ useDocuments
+        if (formatted.length === 0) {
+          throw new Error("ไม่พบข้อมูลในไฟล์ หรือรูปแบบคอลัมน์ไม่ถูกต้อง");
+        }
+
+        onImport(formatted); 
+        Swal.fire({
+          icon: 'success',
+          title: 'Import สำเร็จ',
+          text: `นำเข้าข้อมูลทั้งหมด ${formatted.length} รายการ`,
+          confirmButtonColor: '#1e293b'
+        });
+
       } catch (err) {
-        Swal.fire("Error", "ไฟล์ Excel รูปแบบไม่ถูกต้อง", "error");
+        console.error("Import Error:", err);
+        Swal.fire("Error", err.message || "ไฟล์ Excel รูปแบบไม่ถูกต้อง", "error");
       } finally {
-        e.target.value = ""; // รีเซ็ต input
+        e.target.value = ""; // รีเซ็ต input เพื่อให้เลือกไฟล์เดิมซ้ำได้
       }
     };
     reader.readAsArrayBuffer(file);
-  };
   };
   // --- 1. ฟังก์ชันแสดง Modal รายละเอียด (จากของเดิมที่คุณให้มา) ---
   const handleView = (data) => {

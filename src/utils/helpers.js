@@ -27,3 +27,4 @@ export const getPaymentCycle = (dateString) => {
   else d.setDate(30);
   return d.toISOString().split("T")[0];
 };
+

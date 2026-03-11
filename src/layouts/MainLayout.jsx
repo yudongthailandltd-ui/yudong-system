@@ -2,26 +2,35 @@ import React from 'react';
 import { LayoutDashboard, FileText, Settings, LogOut, User } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 
-const MainLayout = ({ children, user, displayName }) => {
+const MainLayout = ({ children, user, displayName, activeTab, setActiveTab }) => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
-      {/* --- Sidebar --- */}
       <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col fixed h-full">
+        {/* Logo Section */}
         <div className="p-6 border-b border-slate-800">
-          <h2 className="text-xl font-bold text-white tracking-tighter flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg"></div>
-            YUDONG ERP
+           <h2 className="text-xl font-bold text-white tracking-tighter flex items-center gap-2 italic">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg shadow-lg shadow-blue-500/50"></div>
+            YUDONG
           </h2>
         </div>
 
         <nav className="flex-1 p-4 space-y-2 mt-4">
-          <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active />
-          <NavItem icon={<FileText size={20} />} label="Documents" />
-          <NavItem icon={<Settings size={20} />} label="Email Config" />
+          <NavItem 
+    icon={<LayoutDashboard size={20} />} 
+    label="Dashboard" 
+    active={activeTab === "Dashboard"} 
+    onClick={() => setActiveTab("Dashboard")}
+  />
+  <NavItem 
+    icon={<Settings size={20} />} 
+    label="Email Config" 
+    active={activeTab === "Email Config"} 
+    onClick={() => setActiveTab("Email Config")}
+  />
         </nav>
 
         {/* User Profile in Sidebar */}
@@ -43,24 +52,26 @@ const MainLayout = ({ children, user, displayName }) => {
           </button>
         </div>
       </aside>
-
-      {/* --- Main Content Area --- */}
+      
+      {/* Main Content Area */}
       <main className="ml-64 flex-1 p-8">
-        <div className="max-w-7xl mx-auto">
-          {children}
-        </div>
+        {children}
       </main>
     </div>
   );
 };
 
-// Sub-component สำหรับเมนู
-const NavItem = ({ icon, label, active = false }) => (
-  <div className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${
-    active ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'hover:bg-slate-800 hover:text-white'
-  }`}>
+const NavItem = ({ icon, label, active, onClick }) => (
+  <div 
+    onClick={onClick}
+    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 ${
+      active 
+        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40 translate-x-1' 
+        : 'hover:bg-slate-800 hover:text-white'
+    }`}
+  >
     {icon}
-    <span className="font-medium text-sm">{label}</span>
+    <span className="font-bold text-sm">{label}</span>
   </div>
 );
 

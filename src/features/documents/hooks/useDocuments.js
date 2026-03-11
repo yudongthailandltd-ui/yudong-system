@@ -12,7 +12,9 @@ export const useDocuments = () => {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      const name = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0];
+      // const name = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0];
+      // ✅ วิธีดึงชื่อที่ถูกต้องจาก Metadata
+const displayName = session?.user?.user_metadata?.display_name || session?.user?.email;
       setDisplayName(name);
     });
 
@@ -81,9 +83,10 @@ export const useDocuments = () => {
 
   // 4. ฟังก์ชันจัดการข้อมูล (CRUD)
   const handleSave = async (newData) => {
+    const currentUserName = session?.user?.user_metadata?.display_name || "Unknown";
     const { data, error } = await supabase
       .from("documents")
-      .insert([{ ...newData, user_id: session.user.id, recorder_name: displayName }])
+      .insert([{ ...newData, user_id: session.user.id, recorder_name: currentUserName }])
       .select();
 
     if (!error) {
@@ -135,7 +138,24 @@ export const useDocuments = () => {
       }
     }
   };
+// ใน features/documents/hooks/useDocuments.js
 
+// 1. ดึงชื่อจาก Metadata (ถ้าไม่มีให้ใช้ Email แทน)
+
+// 2. ฟังก์ชันอัปเดตชื่อที่ถูกต้อง
+const updateProfile = async (newName) => {
+  try {
+    const { error } = await supabase.auth.updateUser({
+      data: { display_name: newName } // บันทึกลง Metadata
+    });
+    if (error) throw error;
+    
+    // สำคัญ: ต้องแจ้งให้ App ทราบว่าข้อมูลเปลี่ยน หรือใช้การ reload
+    window.location.reload(); 
+  } catch (error) {
+    Swal.fire("Error", error.message, "error");
+  }
+};
   return {
     session,
     documents,
@@ -145,6 +165,7 @@ export const useDocuments = () => {
     fetchDocuments,
     handleSave,
     handleImport,
-    handleDelete
+    handleDelete,
+    updateProfile,
   };
 };
