@@ -260,3 +260,50 @@ setTimeout(() => {
   console.log("🛠️ [TEST] เริ่มการรันระบบทดสอบแบบ Manual...");
   checkAndSendNotifications();
 }, 3000);
+
+// --- Password Reset API ---
+
+// 1. ขอรีเซ็ตรหัสผ่าน
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const { email } = req.body;
+  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+
+  try {
+    // สร้าง Recovery Link ลับผ่าน Admin API
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email: email,
+      options: { redirectTo: `${clientUrl}/reset-password` }
+    });
+
+    if (error) throw error;
+
+    const resetLink = data.properties.action_link;
+
+    // ส่งอีเมลด้วย Resend (ปรับแต่ง HTML ให้เข้ากับ Brand YUDONG)
+    await resend.emails.send({
+      from: "YUDONG System <onboarding@resend.dev>",
+      to: [email],
+      subject: "🔒 รีเซ็ตรหัสผ่านของคุณ - YUDONG Logistics ERP",
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 40px; background: #f8fafc; border-radius: 20px;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #1e293b; margin: 0;">YUDONG <span style="color: #3b82f6;">Logistics</span></h1>
+          </div>
+          <div style="background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <h2 style="color: #1e293b;">แจ้งลืมรหัสผ่าน</h2>
+            <p style="color: #64748b; line-height: 1.6;">เราได้รับคำขอรีเซ็ตรหัสผ่านสำหรับบัญชีพนักงานของคุณ โปรดคลิกปุ่มด้านล่างเพื่อดำเนินการต่อ:</p>
+            <div style="text-align: center; margin: 35px 0;">
+              <a href="${resetLink}" style="background-color: #0f172a; color: white; padding: 14px 30px; text-decoration: none; border-radius: 12px; font-weight: bold;">ตั้งรหัสผ่านใหม่</a>
+            </div>
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">ลิงก์นี้จะหมดอายุภายใน 1 ชั่วโมง หากคุณไม่ได้ทำรายการนี้ โปรดเพิกเฉย</p>
+          </div>
+        </div>
+      `,
+    });
+
+    res.status(200).json({ success: true, message: "ระบบส่งลิงก์รีเซ็ตไปที่อีเมลของคุณแล้ว" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});

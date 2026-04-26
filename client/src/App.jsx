@@ -1,26 +1,28 @@
 import React, { useState } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useDocuments } from "./features/documents/hooks/useDocuments";
 import MainLayout from "./layouts/MainLayout";
 import StatsGrid from "./features/documents/components/StatsGrid";
 import DocumentTable from "./features/documents/components/DocumentTable";
 import DocumentModal from "./features/documents/components/DocumentModal";
 import Login from "./features/auth/Login";
+import ForgotPassword from "./features/auth/ForgotPassword";
+import ResetPassword from "./features/auth/ResetPassword";
+import { supabase } from "./services/supabaseClient";
 
-import { supabase } from "./services/supabaseClient"; // <--- เพิ่มบรรทัดนี้ (เช็ค Path ให้ตรงกับโปรเจกต์คุณ)
-// ... import อื่นๆ
+// --- Sub-Components ---
 const EmailConfigForm = () => {
   const [targetEmail, setTargetEmail] = useState("");
 
   React.useEffect(() => {
     async function loadEmail() {
-      const { data, error } = await supabase
-        .from("email_configs") // 🚩 เปลี่ยนจาก configs เป็น email_configs
+      const { data } = await supabase
+        .from("email_configs")
         .select("recipients")
-        .eq("id", 1) // 🚩 อ้างอิงตาม ID ที่เรากำหนดไว้
+        .eq("id", 1)
         .maybeSingle();
 
       if (data && data.recipients) {
-        // เนื่องจาก recipients เป็น Array ใน DB แต่เราจะโชว์เป็น String ใน Input
         setTargetEmail(data.recipients.join(", ")); 
       }
     }
@@ -28,9 +30,7 @@ const EmailConfigForm = () => {
   }, []);
 
   const handleSaveEmail = async () => {
-    // แปลงกลับจาก String เป็น Array ก่อนบันทึก
     const emailArray = targetEmail.split(",").map(e => e.trim()).filter(e => e !== "");
-
     const { error } = await supabase
       .from("email_configs")
       .upsert({ 
@@ -69,14 +69,9 @@ const EmailConfigForm = () => {
   );
 };
 
-// ✅ 1. ย้ายมาไว้ด้านบน และเช็คค่าเริ่มต้นของ newName ให้ดี
 const UserProfileSettings = ({ displayName, onUpdate }) => {
   const [newName, setNewName] = useState(displayName || "");
-
-  // ป้องกันกรณีที่ displayName เปลี่ยนแปลงจากภายนอก (เช่นตอนโหลดเสร็จ)
-  React.useEffect(() => {
-    setNewName(displayName);
-  }, [displayName]);
+  React.useEffect(() => { setNewName(displayName); }, [displayName]);
 
   return (
     <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
@@ -90,13 +85,7 @@ const UserProfileSettings = ({ displayName, onUpdate }) => {
           className="border border-slate-200 rounded-xl px-4 py-2 flex-1 focus:ring-2 focus:ring-blue-500 outline-none"
         />
         <button
-          onClick={() => {
-            if (typeof onUpdate === "function") {
-              onUpdate(newName);
-            } else {
-              console.error("onUpdate is not a function");
-            }
-          }}
+          onClick={() => onUpdate?.(newName)}
           className="bg-slate-800 text-white px-6 py-2 rounded-xl font-bold hover:bg-slate-700 transition-colors"
         >
           บันทึกชื่อ
@@ -106,8 +95,8 @@ const UserProfileSettings = ({ displayName, onUpdate }) => {
   );
 };
 
+// --- Main App Component ---
 function App() {
-  // ✅ 2. ตรวจสอบว่าใน useDocuments มีการ return updateProfile ออกมาแล้ว
   const {
     session,
     documents,
@@ -123,74 +112,83 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("Dashboard");
 
-  if (!session) return <Login />;
-
   return (
-    <MainLayout
-      user={session.user}
-      displayName={displayName}
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-    >
-      {/* --- หน้า Dashboard (รวม Documents ไว้ที่นี่แล้ว) --- */}
-      {activeTab === "Dashboard" && (
-        <div className="space-y-8">
-          <header className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-black text-slate-800 tracking-tight">
-                Dashboard
-              </h1>
-              <p className="text-slate-500">ยินดีต้อนรับ, {displayName}</p>
-            </div>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold shadow-xl shadow-blue-200 transition-all active:scale-95 flex items-center gap-2"
-            >
-              + เพิ่มเอกสารใหม่
-            </button>
-          </header>
+    <BrowserRouter>
+      <Routes>
+        {/* 1. Public Routes: เข้าได้ตลอดเวลา หรือ Redirect ถ้า Login แล้ว */}
+        <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
-          <StatsGrid stats={stats} />
+        {/* 2. Private Routes: ต้องมี Session เท่านั้น */}
+        <Route 
+          path="/" 
+          element={
+            session ? (
+              <MainLayout
+                user={session.user}
+                displayName={displayName}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+              >
+                {activeTab === "Dashboard" && (
+                  <div className="space-y-8">
+                    <header className="flex justify-between items-center">
+                      <div>
+                        <h1 className="text-2xl font-black text-slate-800 tracking-tight">Dashboard</h1>
+                        <p className="text-slate-500">ยินดีต้อนรับ, {displayName}</p>
+                      </div>
+                      <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold shadow-xl shadow-blue-200 transition-all active:scale-95 flex items-center gap-2"
+                      >
+                        + เพิ่มเอกสารใหม่
+                      </button>
+                    </header>
 
-          <div className="bg-white rounded-3xl overflow-hidden shadow-2xl shadow-slate-200 border border-slate-100">
-            <div className="p-1 h-[600px]">
-              <DocumentTable
-                data={documents}
-                onRefresh={fetchDocuments}
-                onImport={handleImport}
-                onDelete={handleDelete}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+                    <StatsGrid stats={stats} />
 
-      {/* --- หน้า Settings (จัดการโปรไฟล์และอีเมล) --- */}
-      {activeTab === "Email Config" && (
-        <div className="max-w-4xl space-y-6">
-          <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-            {/* ส่ง displayName และ updateProfile เข้าไป */}
-            <UserProfileSettings
-              displayName={displayName}
-              onUpdate={updateProfile}
-            />
-          </div>
+                    <div className="bg-white rounded-2xl overflow-hidden shadow-2xl shadow-slate-200 border border-slate-100">
+                      <div className="p-2 h-[750px]">
+                        <DocumentTable
+                          data={documents}
+                          onRefresh={fetchDocuments}
+                          onImport={handleImport}
+                          onDelete={handleDelete}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-          <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-            <h3 className="font-bold text-slate-800 mb-2">
-              Email Notification
-            </h3>
-            <EmailConfigForm /> {/* ใช้ Component ที่เราสร้างไว้ข้างบน */}
-          </div>
-        </div>
-      )}
+                {activeTab === "Email Config" && (
+                  <div className="max-w-4xl space-y-6">
+                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+                      <UserProfileSettings displayName={displayName} onUpdate={updateProfile} />
+                    </div>
+                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+                      <h3 className="font-bold text-slate-800 mb-2">Email Notification</h3>
+                      <EmailConfigForm />
+                    </div>
+                  </div>
+                )}
 
-      <DocumentModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSubmit={handleSave}
-      />
-    </MainLayout>
+                <DocumentModal
+                  isOpen={isModalOpen}
+                  onClose={() => setIsModalOpen(false)}
+                  onSubmit={handleSave}
+                />
+              </MainLayout>
+            ) : (
+              <Navigate to="/login" />
+            )
+          } 
+        />
+        
+        {/* 3. Fallback: ถ้าไปมั่วๆ ให้กลับไปหน้าหลัก */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
